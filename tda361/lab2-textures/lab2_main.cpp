@@ -19,7 +19,7 @@ SDL_Window* g_window = nullptr;
 using namespace glm;
 
 int mag = 1;
-int mini = 5;
+int mini = 0;
 float anisotropy = 16.0f;
 
 // The shaderProgram holds the vertexShader and fragmentShader
@@ -27,7 +27,9 @@ GLuint shaderProgram;
 
 // The vertexArrayObject here will hold the pointers to 
 // the vertex data (in positionBuffer) and color data per vertex (in colorBuffer)
-GLuint		positionBuffer, colorBuffer, indexBuffer, vertexArrayObject;						
+GLuint		positionBuffer, colorBuffer, textureBuffer, indexBuffer, vertexArrayObject, texture;		
+
+GLuint		expIndexBuffer, expPosBuff, expVAO, expTexBuff, expTexture;
 
 
 
@@ -49,6 +51,7 @@ void initGL()
 		10.0f, -10.0f, -330.0f,   // v2
 		10.0f, -10.0f, -30.0f     // v3
 	};
+
 	glGenBuffers(1, &positionBuffer);													// Create a handle for the vertex position buffer
 	glBindBuffer( GL_ARRAY_BUFFER, positionBuffer );									// Set the newly created buffer as the current one
 	glBufferData( GL_ARRAY_BUFFER, sizeof(positions), positions, GL_STATIC_DRAW );		// Send the vetex position data to the current buffer
@@ -78,6 +81,18 @@ void initGL()
 	//				 Enable the vertex attrib array.
 	///////////////////////////////////////////////////////////////////////////
 
+	float texcoords[] = {
+		0.0f, 0.0f,	// (u,v) for v0
+		0.0f, 15.0f,	// (u,v) for v1
+		1.0f, 15.0f,	// (u,v) for v2
+		1.0f, 0.0f	// (u,v) for v3
+	};
+	glGenBuffers(1, &textureBuffer);
+	glBindBuffer(GL_ARRAY_BUFFER, textureBuffer);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(texcoords), texcoords, GL_STATIC_DRAW);
+	glVertexAttribPointer(2, 2, GL_FLOAT, false, 0, 0);
+	glEnableVertexAttribArray(2);
+
 	///////////////////////////////////////////////////////////////////////////
 	// Create the element array buffer object
 	///////////////////////////////////////////////////////////////////////////	
@@ -95,11 +110,69 @@ void initGL()
 	shaderProgram = labhelper::loadShaderProgram("../lab2-textures/simple.vert", "../lab2-textures/simple.frag");
 
 	//**********************************************
+	
+	glGenVertexArrays(1, &expVAO);
+	glBindVertexArray(expVAO);
+
+	const float expPos[] = {
+		-5.0f, 5.0f, -35.0f, /* Texcoords */ 0.0f, 1.0f,
+		-5.0f, -5.0f, -35.0f,				 0.0f, 0.0f,
+		5.0f, -5.0f, -35.0f,			     1.0f, 0.0f,
+		5.0f, 5.0f, -35.0f,					 1.0f, 1.0f
+	};
+	glGenBuffers(1, &expPosBuff);
+	glBindBuffer(GL_ARRAY_BUFFER, expPosBuff);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(expPos), expPos, GL_STATIC_DRAW);
+
+	const int expIndices[] = {
+		0, 1, 3,
+		3, 1, 2
+	};
+	glGenBuffers(1, &expIndexBuffer);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, expIndexBuffer);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(expIndices), expIndices, GL_STATIC_DRAW);
+
+	glVertexAttribPointer(0, 3, GL_FLOAT, false, 5 * sizeof(float), 0);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(2, 2, GL_FLOAT, false, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+	glEnableVertexAttribArray(2);
 
 	//************************************
 	//			Load Texture
 	//************************************
 	// >>> @task 2
+	int w, h, comp;
+	unsigned char* image = stbi_load("../lab2-textures/asphalt.jpg", &w, &h, &comp, STBI_rgb_alpha);
+
+	glGenTextures(1, &texture);
+
+	glBindTexture(GL_TEXTURE_2D, texture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, image);
+	stbi_image_free(image);
+
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+	glGenerateMipmap(GL_TEXTURE_2D);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, 16.0f);
+
+	image = stbi_load("../lab2-textures/explosion.png", &w, &h, &comp, STBI_rgb_alpha);
+	glGenTextures(1, &expTexture);
+
+	glBindTexture(GL_TEXTURE_2D, expTexture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, image);
+	stbi_image_free(image);
+
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+	glGenerateMipmap(GL_TEXTURE_2D);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 }
 
 void display(void)
@@ -131,10 +204,20 @@ void display(void)
 	glUniformMatrix4fv(loc, 1, false, &projectionMatrix[0].x);
 
 	// >>> @task 3.1
-
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, (GL_NEAREST + mag));
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, (GL_NEAREST + mini));
+	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, anisotropy);
 	glBindVertexArray(vertexArrayObject);
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	glBindVertexArray(expVAO);
+	glBindTexture(GL_TEXTURE_2D, expTexture);
+	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
 	glUseProgram( 0 ); // "unsets" the current shader program. Not really necessary.
 }
@@ -154,10 +237,10 @@ void gui() {
         ImGui::Text("Minification");
         ImGui::RadioButton("GL_NEAREST", &mini, 0);
         ImGui::RadioButton("GL_LINEAR", &mini, 1);
-        ImGui::RadioButton("GL_NEAREST_MIPMAP_NEAREST", &mini, 2);
-        ImGui::RadioButton("GL_NEAREST_MIPMAP_LINEAR", &mini, 3);
-        ImGui::RadioButton("GL_LINEAR_MIPMAP_NEAREST", &mini, 4);
-        ImGui::RadioButton("GL_LINEAR_MIPMAP_LINEAR", &mini, 5);
+        ImGui::RadioButton("GL_NEAREST_MIPMAP_NEAREST", &mini, 0x100);
+        ImGui::RadioButton("GL_NEAREST_MIPMAP_LINEAR", &mini, 0x102);
+        ImGui::RadioButton("GL_LINEAR_MIPMAP_NEAREST", &mini, 0x101);
+        ImGui::RadioButton("GL_LINEAR_MIPMAP_LINEAR", &mini, 0x103);
         ImGui::PopID();
 
         ImGui::SliderFloat("Anisotropic filtering", &anisotropy, 1.0, 16.0, "Number of samples: %.0f");
@@ -182,7 +265,7 @@ int main(int argc, char *argv[])
 		display();
 
                 // Render overlay GUI.
-                //gui();
+                gui();
 
 		// Swap front and back buffer. This frame will now been displayed.
 		SDL_GL_SwapWindow(g_window);			
