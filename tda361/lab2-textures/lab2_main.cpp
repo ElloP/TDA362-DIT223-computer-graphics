@@ -18,8 +18,8 @@ SDL_Window* g_window = nullptr;
 #include <glm/gtx/transform.hpp>
 using namespace glm;
 
-int mag = 1;
-int mini = 0;
+int mag = 0x2600;
+int mini = 0x2600;
 float anisotropy = 16.0f;
 
 // The shaderProgram holds the vertexShader and fragmentShader
@@ -169,8 +169,6 @@ void initGL()
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
 	glGenerateMipmap(GL_TEXTURE_2D);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 }
@@ -206,8 +204,8 @@ void display(void)
 	// >>> @task 3.1
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, texture);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, (GL_NEAREST + mag));
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, (GL_NEAREST + mini));
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, mag);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, mini);
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, anisotropy);
 	glBindVertexArray(vertexArrayObject);
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
@@ -229,18 +227,18 @@ void gui() {
         // ----------------- Set variables --------------------------  
         ImGui::PushID("mag");
         ImGui::Text("Magnification");
-        ImGui::RadioButton("GL_NEAREST", &mag, 0);
-        ImGui::RadioButton("GL_LINEAR", &mag, 1);
+        ImGui::RadioButton("GL_NEAREST", &mag, 0x2600);
+        ImGui::RadioButton("GL_LINEAR", &mag, 0x2601);
         ImGui::PopID();
 
         ImGui::PushID("mini");
         ImGui::Text("Minification");
-        ImGui::RadioButton("GL_NEAREST", &mini, 0);
-        ImGui::RadioButton("GL_LINEAR", &mini, 1);
-        ImGui::RadioButton("GL_NEAREST_MIPMAP_NEAREST", &mini, 0x100);
-        ImGui::RadioButton("GL_NEAREST_MIPMAP_LINEAR", &mini, 0x102);
-        ImGui::RadioButton("GL_LINEAR_MIPMAP_NEAREST", &mini, 0x101);
-        ImGui::RadioButton("GL_LINEAR_MIPMAP_LINEAR", &mini, 0x103);
+        ImGui::RadioButton("GL_NEAREST", &mini, 0x2600);
+        ImGui::RadioButton("GL_LINEAR", &mini, 0x2601);
+        ImGui::RadioButton("GL_NEAREST_MIPMAP_NEAREST", &mini, 0x2700);
+        ImGui::RadioButton("GL_NEAREST_MIPMAP_LINEAR", &mini, 0x2702);
+        ImGui::RadioButton("GL_LINEAR_MIPMAP_NEAREST", &mini, 0x2701);
+        ImGui::RadioButton("GL_LINEAR_MIPMAP_LINEAR", &mini, 0x2703);
         ImGui::PopID();
 
         ImGui::SliderFloat("Anisotropic filtering", &anisotropy, 1.0, 16.0, "Number of samples: %.0f");
