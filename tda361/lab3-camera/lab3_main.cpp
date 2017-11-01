@@ -93,7 +93,15 @@ void display(void)
 		0.000000000f, 0.816496551f, 1.00000000f, 0.000000000f,
 		-0.707106769f, -0.408248276f, 1.00000000f, 0.000000000f,
 		0.000000000f, 0.000000000f, -30.0000000f, 1.00000000f);
-	mat4 viewMatrix = constantViewMatrix;
+
+	// use camera direction as -z axis and compute the x (cameraRight) and y (cameraUp) base vectors
+	vec3 cameraRight = normalize(cross(cameraDirection, worldUp));
+	vec3 cameraUp = normalize(cross(cameraRight, cameraDirection));
+
+	mat3 cameraBaseVectorsWorldSpace(cameraRight, cameraUp, -cameraDirection);
+
+	mat4 cameraRotation = mat4(transpose(cameraBaseVectorsWorldSpace));
+	mat4 viewMatrix = cameraRotation * translate(-cameraPosition);
 
 	// Setup the projection matrix
         if (w != old_w || h != old_h)
@@ -115,6 +123,20 @@ void display(void)
 
 	// car
 	modelViewProjectionMatrix = projectionMatrix * viewMatrix * carModelMatrix;
+	glUniformMatrix4fv(loc, 1, false, &modelViewProjectionMatrix[0].x);
+	render(carModel);
+
+	mat4 T2(1.0f), R2(1.0f), S2(1.0f);
+
+	T2 = translate((vec3(0,0,10.0f))) * rotate(90.0f, vec3(0.0f,1.0f,0.0f));
+
+	R2 = rotate((10.0f * currentTime), vec3(0.0f, 1.0f, 0.0f));
+
+	S2 = scale(vec3(1.0f, 5.0f, 1.0f));
+
+	mat4 carModelMatrix2 = S2 * R2 * T2;
+
+	modelViewProjectionMatrix = projectionMatrix * viewMatrix * carModelMatrix2;
 	glUniformMatrix4fv(loc, 1, false, &modelViewProjectionMatrix[0].x);
 	render(carModel);
 
@@ -172,7 +194,7 @@ int main(int argc, char *argv[])
 		display();
 
                 // Render overlay GUI.
-                //gui();
+                gui();
 
 		// Swap front and back buffer. This frame will now been displayed.
 		SDL_GL_SwapWindow(g_window);
@@ -194,8 +216,12 @@ int main(int argc, char *argv[])
 				static int prev_ycoord = event.motion.y;
 				int delta_x = event.motion.x - prev_xcoord;
 				int delta_y = event.motion.y - prev_ycoord;
-				if (event.button.button & SDL_BUTTON(SDL_BUTTON_LEFT)) {
-					printf("Mouse motion while left button down (%i, %i)\n", event.motion.x, event.motion.y);
+				if(event.button.button & SDL_BUTTON(SDL_BUTTON_LEFT))
+				{
+					float rotationSpeed = 0.005f;
+					mat4 yaw = rotate(rotationSpeed * -delta_x, worldUp);
+					mat4 pitch = rotate(rotationSpeed * -delta_y, normalize(cross(cameraDirection, worldUp)));
+					cameraDirection = vec3(pitch * yaw * vec4(cameraDirection, 0.0f));
 				}
 				prev_xcoord = event.motion.x;
 				prev_ycoord = event.motion.y;
@@ -205,19 +231,38 @@ int main(int argc, char *argv[])
 		// check keyboard state (which keys are still pressed)
 		const uint8_t *state = SDL_GetKeyboardState(nullptr);
 
-		// implement camera controls based on key states
-		if (state[SDL_SCANCODE_UP]) {
-			printf("Key Up is pressed down\n");
+		// implement controls based on key states
+		float speed = 0.3f;
+		static mat4 T(1.0f), R(1.0f);
+		if(state[SDL_SCANCODE_UP])
+		{
+			T[3] += speed * (R * vec4(0.0f, 0.0f, 1.0f, 0.0f));
 		}
-		if (state[SDL_SCANCODE_DOWN]) {
-			printf("Key Down is pressed down\n");
+		if(state[SDL_SCANCODE_DOWN])
+		{
+			T[3] -= speed * (R * vec4(0.0f, 0.0f, 1.0f, 0.0f));
 		}
-		if (state[SDL_SCANCODE_LEFT]) {
-			printf("Key Left is pressed down\n");
+		if(state[SDL_SCANCODE_LEFT])
+		{
+			R[0] -= 0.03f * R[2];
 		}
-		if (state[SDL_SCANCODE_RIGHT]) {
-			printf("Key Right is pressed down\n");
+		if(state[SDL_SCANCODE_RIGHT])
+		{
+			R[0] += 0.03f * R[2];
 		}
+		if(state[SDL_SCANCODE_W])
+		{
+			cameraPosition += 1.0f * cameraDirection;
+		}
+		if(state[SDL_SCANCODE_S])
+		{
+			cameraPosition -= 1.0f * cameraDirection;
+		}
+
+		// Make R orthonormal again
+		R[0] = normalize(R[0]);
+		R[2] = vec4(cross(vec3(R[0]), vec3(R[1])), 0.0f);
+		carModelMatrix = T * R;
 	}
 
 	// Shut down everything. This includes the window and all other subsystems.
