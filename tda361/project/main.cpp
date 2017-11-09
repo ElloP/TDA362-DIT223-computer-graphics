@@ -1,5 +1,3 @@
-
-
 #ifdef _WIN32
 extern "C" _declspec(dllexport) unsigned int NvOptimusEnablement = 0x00000001;
 #endif
@@ -21,9 +19,7 @@ using namespace glm;
 #include <Model.h>
 #include "hdr.h"
 #include "fbo.h"
-
-
-
+#include "heightfield.h"
 
 using std::min;
 using std::max;
@@ -44,6 +40,7 @@ int windowWidth, windowHeight;
 GLuint shaderProgram; // Shader for rendering the final image
 GLuint simpleShaderProgram; // Shader used to draw the shadow map
 GLuint backgroundProgram;
+GLuint heightFieldProgram;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Environment
@@ -57,10 +54,29 @@ const std::string envmap_base_name = "001";
 ///////////////////////////////////////////////////////////////////////////////
 vec3 lightPosition;
 vec3 point_light_color = vec3(1.f, 1.f, 1.f);
-
+bool useSpotLight = false;
+float innerSpotlightAngle = 15.5f;
+float outerSpotlightAngle = 22.5f;
 float point_light_intensity_multiplier = 10000.0f;
 
 
+///////////////////////////////////////////////////////////////////////////////
+// Shadow map
+///////////////////////////////////////////////////////////////////////////////
+enum ClampMode {
+	Edge = 1,
+	Border = 2
+};
+
+FboInfo shadowMapFB;
+HeightField terrain;
+int shadowMapResolution = 128;
+int shadowMapClampMode = ClampMode::Edge;
+bool usePolygonOffest = true;
+bool useSoftFalloff = false;
+bool useHardwarePCF = false;
+float polygonOffset_factor = 1.1f;
+float polygonOffset_units = .0f;
 
 
 
@@ -83,6 +99,7 @@ labhelper::Model *sphereModel = nullptr;
 mat4 roomModelMatrix;
 mat4 landingPadModelMatrix; 
 mat4 fighterModelMatrix;
+mat4 heightFieldModelMatrix;
 
 void loadShaders(bool is_reload)
 {
@@ -91,6 +108,8 @@ void loadShaders(bool is_reload)
 	shader = labhelper::loadShaderProgram("../project/background.vert", "../project/background.frag", is_reload);
 	if (shader != 0) backgroundProgram = shader;
 	shader = labhelper::loadShaderProgram("../project/shading.vert", "../project/shading.frag", is_reload);
+	if (shader != 0) shaderProgram = shader;
+	shader = labhelper::loadShaderProgram("../project/heightfield.vert", "../project/heightfield.frag");
 	if (shader != 0) shaderProgram = shader;
 }
 
@@ -102,6 +121,7 @@ void initGL()
 	backgroundProgram   = labhelper::loadShaderProgram("../project/background.vert", "../project/background.frag");
 	shaderProgram       = labhelper::loadShaderProgram("../project/shading.vert",    "../project/shading.frag");
 	simpleShaderProgram = labhelper::loadShaderProgram("../project/simple.vert",     "../project/simple.frag");
+	heightFieldProgram = labhelper::loadShaderProgram("../project/heightfield.vert", "../project/heightfield.frag");
 
 	///////////////////////////////////////////////////////////////////////
 	// Load models and set up model matrices
@@ -113,6 +133,7 @@ void initGL()
 	roomModelMatrix = mat4(1.0f);
 	fighterModelMatrix = translate(15.0f * worldUp);
 	landingPadModelMatrix = mat4(1.0f);
+	heightFieldModelMatrix = scale(vec3(50.0f, 50.0f, 50.0f));
 
 	///////////////////////////////////////////////////////////////////////
 	// Load environment map
@@ -130,7 +151,20 @@ void initGL()
 	glEnable(GL_DEPTH_TEST);	// enable Z-buffering 
 	glEnable(GL_CULL_FACE);		// enables backface culling
 
+	///////////////////////////////////////////////////////////////////////
+	// Setup Framebuffer for shadow map rendering
+	///////////////////////////////////////////////////////////////////////
+	shadowMapFB.resize(shadowMapResolution, shadowMapResolution);
 
+
+	glEnable(GL_DEPTH_TEST);	// enable Z-buffering 
+	glEnable(GL_CULL_FACE);		// enables backface culling
+
+	glBindTexture(GL_TEXTURE_2D, shadowMapFB.depthBuffer);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+
+	terrain.generateMesh(128);
 }
 
 void debugDrawLight(const glm::mat4 &viewMatrix, const glm::mat4 &projectionMatrix, const glm::vec3 &worldSpaceLightPos)
@@ -162,7 +196,12 @@ void drawScene(GLuint currentShaderProgram, const mat4 &viewMatrix, const mat4 &
 	labhelper::setUniformSlow(currentShaderProgram, "point_light_intensity_multiplier", point_light_intensity_multiplier);
 	labhelper::setUniformSlow(currentShaderProgram, "viewSpaceLightPosition", vec3(viewSpaceLightPosition));
 	labhelper::setUniformSlow(currentShaderProgram, "viewSpaceLightDir", normalize(vec3(viewMatrix * vec4(-lightPosition, 0.0f))));
+	labhelper::setUniformSlow(currentShaderProgram, "spotOuterAngle", std::cos(radians(outerSpotlightAngle)));
+	labhelper::setUniformSlow(currentShaderProgram, "spotInnerAngle", std::cos(radians(innerSpotlightAngle)));
 
+	//shadowMap
+	mat4 lightMatrix = translate(mat4(1.0f), vec3(0.5f, 0.5f, 0.5f)) * scale(mat4(1.0f), vec3(0.5f, 0.5f, 0.5f)) * lightProjectionMatrix * lightViewMatrix * inverse(viewMatrix);
+	labhelper::setUniformSlow(currentShaderProgram, "lightMatrix", lightMatrix);
 
 	// Environment
 	labhelper::setUniformSlow(currentShaderProgram, "environment_multiplier", environment_multiplier);
@@ -175,16 +214,20 @@ void drawScene(GLuint currentShaderProgram, const mat4 &viewMatrix, const mat4 &
 	labhelper::setUniformSlow(currentShaderProgram, "modelViewMatrix", viewMatrix * landingPadModelMatrix);
 	labhelper::setUniformSlow(currentShaderProgram, "normalMatrix", inverse(transpose(viewMatrix * landingPadModelMatrix)));
 
-	labhelper::render(landingpadModel);
+	//labhelper::render(landingpadModel);
 
 	// Fighter
 	labhelper::setUniformSlow(currentShaderProgram, "modelViewProjectionMatrix", projectionMatrix * viewMatrix * fighterModelMatrix);
 	labhelper::setUniformSlow(currentShaderProgram, "modelViewMatrix", viewMatrix * fighterModelMatrix);
 	labhelper::setUniformSlow(currentShaderProgram, "normalMatrix", inverse(transpose(viewMatrix * fighterModelMatrix)));
 
-	labhelper::render(fighterModel);
-}
+	//labhelper::render(fighterModel);
 
+
+	//draw the heightfield mesh
+	labhelper::setUniformSlow(currentShaderProgram, "modelViewProjectionMatrix", projectionMatrix * viewMatrix * heightFieldModelMatrix);
+	terrain.submitTriangles();
+}
 
 void display(void)
 {
@@ -222,7 +265,57 @@ void display(void)
 	glBindTexture(GL_TEXTURE_2D, reflectionMap);
 	glActiveTexture(GL_TEXTURE0);
 
+	///////////////////////////////////////////////////////////////////////////
+	// Set up shadow map parameters
+	///////////////////////////////////////////////////////////////////////////
+	if (shadowMapFB.width != shadowMapResolution || shadowMapFB.height != shadowMapResolution)
+	{
+		shadowMapFB.resize(shadowMapResolution, shadowMapResolution);
+	}
 
+	if (shadowMapClampMode == ClampMode::Edge)
+	{
+		glBindTexture(GL_TEXTURE_2D, shadowMapFB.depthBuffer);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	}
+
+	if (shadowMapClampMode == ClampMode::Border)
+	{
+		glBindTexture(GL_TEXTURE_2D, shadowMapFB.depthBuffer);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+		vec4 zeros(0.0f);
+		glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, &zeros.x);
+	}
+
+	///////////////////////////////////////////////////////////////////////////
+	// Draw Shadow Map
+	///////////////////////////////////////////////////////////////////////////
+
+	glBindFramebuffer(GL_FRAMEBUFFER, shadowMapFB.framebufferId);
+	glViewport(0, 0, shadowMapFB.width, shadowMapFB.height);
+	glClearColor(0.2, 0.2, 0.8, 1.0);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	if (usePolygonOffest)
+	{
+		glEnable(GL_POLYGON_OFFSET_FILL);
+		glPolygonOffset(polygonOffset_factor, polygonOffset_units);
+	}
+
+	drawScene(simpleShaderProgram, lightViewMatrix, lightProjMatrix, lightViewMatrix, lightProjMatrix);
+
+	if (usePolygonOffest)
+	{
+		glDisable(GL_POLYGON_OFFSET_FILL);
+	}
+
+	labhelper::Material &screen = landingpadModel->m_materials[8];
+	//screen.m_emission_texture.gl_id = shadowMapFB.colorTextureTarget;
+
+	glActiveTexture(GL_TEXTURE10);
+	glBindTexture(GL_TEXTURE_2D, shadowMapFB.depthBuffer);
 
 	///////////////////////////////////////////////////////////////////////////
 	// Draw from camera
@@ -236,8 +329,8 @@ void display(void)
 	drawScene(shaderProgram, viewMatrix, projMatrix, lightViewMatrix, lightProjMatrix);
 	debugDrawLight(viewMatrix, projMatrix, vec3(lightPosition));
 
-
-
+	drawScene(heightFieldProgram, viewMatrix, projMatrix, lightViewMatrix, lightProjMatrix);
+	glUseProgram(0);
 }
 
 bool handleEvents(void)
@@ -302,6 +395,10 @@ void gui()
 	// ----------------- Set variables --------------------------
 	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 	// ----------------------------------------------------------
+	if (ImGui::Button("Reload Shaders"))
+	{
+		loadShaders(true);
+	}
 	// Render the GUI.
 	ImGui::Render();
 }

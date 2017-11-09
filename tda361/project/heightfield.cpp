@@ -1,4 +1,3 @@
-
 #include "heightfield.h"
 
 #include <iostream>
@@ -78,8 +77,58 @@ void HeightField::loadDiffuseTexture(const std::string &diffusePath)
 
 void HeightField::generateMesh(int tesselation)
 {
+	//length of the mesh divided by the tesselation
+	float triangleSize = 2.0 / tesselation;
+	//each quad has 6 indices, nr of quads == tesselation ^ 2
+	m_numIndices = 6 * tesselation * tesselation;
+
+	assert(tesselation % 4 == 0 || tesselation == 1);
 	// generate a mesh in range -1 to 1 in x and z
 	// (y is 0 but will be altered in height field vertex shader)
+	float* positions = new float[3 * m_numIndices];
+	for (float x = -1.0f; x < 1; x += triangleSize)
+		for (float z = -1.0f; z < 1; z += triangleSize)
+		{
+			static int i = 0;
+			positions[i] = x;
+			positions[i + 1] = 0;
+			positions[i + 2] = z;
+
+			positions[i + 3] = x;
+			positions[i + 4] = 0;
+			positions[i + 5] = z + triangleSize;
+
+			positions[i + 6] = x + triangleSize;
+			positions[i + 7] = 0;
+			positions[i + 8] = z;
+
+			positions[i + 9] = x + triangleSize;
+			positions[i + 10] = 0;
+			positions[i + 11] = z + triangleSize;
+
+			positions[i + 12] = x + triangleSize;
+			positions[i + 13] = 0;
+			positions[i + 14] = z;
+
+			positions[i + 15] = x;
+			positions[i + 16] = 0;
+			positions[i + 17] = z + triangleSize;
+			i += 18;
+		}
+	glGenVertexArrays(1, &m_vao);
+
+	glBindVertexArray(m_vao);
+
+	glGenBuffers(1, &m_positionBuffer);
+	glBindBuffer(GL_ARRAY_BUFFER, m_positionBuffer);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 3 * m_numIndices, positions, GL_STATIC_DRAW);
+
+	delete[] positions;
+
+	glVertexAttribPointer(0, 3, GL_FLOAT, false, 3 * sizeof(float), 0);
+	glEnableVertexAttribArray(0);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindVertexArray(0);
 }
 
 void HeightField::submitTriangles(void)
@@ -89,4 +138,9 @@ void HeightField::submitTriangles(void)
 		return;
 	}
 
+	glBindVertexArray(m_vao);
+	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+	glDrawArrays(GL_TRIANGLES, 0, m_numIndices);
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL); 
+	glBindVertexArray(0);
 }
