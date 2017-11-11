@@ -4,6 +4,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 layout(location = 0) in vec3 position;
 layout(location = 2) in vec2 texCoordIn;
+layout(binding = 0) uniform sampler2D hf;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Input uniform variables
@@ -22,6 +23,7 @@ out vec3 viewSpaceNormal;
 
 void main() 
 {
-	gl_Position = modelViewProjectionMatrix * vec4(position, 1.0);
+	float height = texture2D(hf, texCoordIn.xy).r;
+	gl_Position = modelViewProjectionMatrix * vec4(position.x, height, position.z, 1.0);
 	texCoord = texCoordIn;
 }

@@ -82,51 +82,109 @@ void HeightField::generateMesh(int tesselation)
 	//each quad has 6 indices, nr of quads == tesselation ^ 2
 	m_numIndices = 6 * tesselation * tesselation;
 
-	assert(tesselation % 4 == 0 || tesselation == 1);
 	// generate a mesh in range -1 to 1 in x and z
 	// (y is 0 but will be altered in height field vertex shader)
-	float* positions = new float[3 * m_numIndices];
+	std::vector<float> positions;
+	std::vector<float> texCoords;
+	std::vector<unsigned int> indices;
 	for (float x = -1.0f; x < 1; x += triangleSize)
 		for (float z = -1.0f; z < 1; z += triangleSize)
 		{
-			static int i = 0;
-			positions[i] = x;
-			positions[i + 1] = 0;
-			positions[i + 2] = z;
+			positions.push_back(x);
+			positions.push_back(0);
+			positions.push_back(z);
 
-			positions[i + 3] = x;
-			positions[i + 4] = 0;
-			positions[i + 5] = z + triangleSize;
+			texCoords.push_back((x + 1) / 2);
+			texCoords.push_back((z + 1) / 2);
 
-			positions[i + 6] = x + triangleSize;
-			positions[i + 7] = 0;
-			positions[i + 8] = z;
+			positions.push_back(x);
+			positions.push_back(0);
+			positions.push_back(z + triangleSize);
 
-			positions[i + 9] = x + triangleSize;
-			positions[i + 10] = 0;
-			positions[i + 11] = z + triangleSize;
+			texCoords.push_back((x + 1) / 2);
+			texCoords.push_back((z + triangleSize + 1) / 2);
 
-			positions[i + 12] = x + triangleSize;
-			positions[i + 13] = 0;
-			positions[i + 14] = z;
+			positions.push_back(x + triangleSize);
+			positions.push_back(0);
+			positions.push_back(z);
 
-			positions[i + 15] = x;
-			positions[i + 16] = 0;
-			positions[i + 17] = z + triangleSize;
-			i += 18;
+			texCoords.push_back((x + triangleSize + 1) / 2);
+			texCoords.push_back((z + 1) / 2);
+
+			positions.push_back(x + triangleSize);
+			positions.push_back(0);
+			positions.push_back(z + triangleSize);
+
+			texCoords.push_back((x + triangleSize + 1) / 2);
+			texCoords.push_back((z + triangleSize + 1) / 2);
+
+			positions.push_back(x + triangleSize);
+			positions.push_back(0);
+			positions.push_back(z);
+
+			texCoords.push_back((x + triangleSize + 1) / 2);
+			texCoords.push_back((z + 1) / 2);
+
+			positions.push_back(x);
+			positions.push_back(0);
+			positions.push_back(z + triangleSize);
+
+			texCoords.push_back((x + 1) / 2);
+			texCoords.push_back((z + triangleSize + 1) / 2);
+		} 
+	/*
+	for (float z = -1.0f; z <= 1; z += triangleSize)
+		for (float x = -1.0f; x <= 1; x += triangleSize) 
+		{
+			positions.push_back(x);
+			positions.push_back(0);
+			positions.push_back(z);
+
+			texCoords.push_back((x + 1) / 2);
+			texCoords.push_back((z + 1) / 2);
 		}
+
+	for(int i = 0; i < m_numIndices; i++) 
+	{
+		if(i % tesselation == 0 && i != 0)
+			continue;
+		indices.push_back(i);
+		indices.push_back(i + 1);
+		indices.push_back(i + 1 + tesselation);
+
+		indices.push_back(i + 1);
+		indices.push_back(i + 2 + tesselation);
+		indices.push_back(i + 1 + tesselation);
+
+	} 
+	*/
+		
+
 	glGenVertexArrays(1, &m_vao);
 
 	glBindVertexArray(m_vao);
 
 	glGenBuffers(1, &m_positionBuffer);
 	glBindBuffer(GL_ARRAY_BUFFER, m_positionBuffer);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 3 * m_numIndices, positions, GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, positions.size() * sizeof(float), positions.data(), GL_STATIC_DRAW);
+	glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
 
-	delete[] positions;
+	glGenBuffers(1, &m_uvBuffer);
+	glBindBuffer(GL_ARRAY_BUFFER, m_uvBuffer);
+	glBufferData(GL_ARRAY_BUFFER, texCoords.size() * sizeof(float), texCoords.data(), GL_STATIC_DRAW);
+	glVertexAttribPointer(2, 2, GL_FLOAT, false, 0, 0);
 
-	glVertexAttribPointer(0, 3, GL_FLOAT, false, 3 * sizeof(float), 0);
+	/*
+	glGenBuffers(1, &m_indexBuffer);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_indexBuffer);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);*/
+
+	//delete[] indices;
+	//delete[] texCoords;
+	//delete[] positions;
+
 	glEnableVertexAttribArray(0);
+	glEnableVertexAttribArray(2);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
 }
@@ -139,8 +197,15 @@ void HeightField::submitTriangles(void)
 	}
 
 	glBindVertexArray(m_vao);
-	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+	//glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+	glDisable(GL_CULL_FACE);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, m_texid_hf);
+	glActiveTexture(GL_TEXTURE1);
+	glBindTexture(GL_TEXTURE_2D, m_texid_diffuse);
+	//glDrawElements(GL_TRIANGLES, m_numIndices, GL_UNSIGNED_INT, 0);
 	glDrawArrays(GL_TRIANGLES, 0, m_numIndices);
+	glEnable(GL_CULL_FACE);
 	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL); 
 	glBindVertexArray(0);
 }
