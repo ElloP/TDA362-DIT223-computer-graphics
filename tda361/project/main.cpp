@@ -110,7 +110,7 @@ void loadShaders(bool is_reload)
 	shader = labhelper::loadShaderProgram("../project/shading.vert", "../project/shading.frag", is_reload);
 	if (shader != 0) shaderProgram = shader;
 	shader = labhelper::loadShaderProgram("../project/heightfield.vert", "../project/heightfield.frag", is_reload);
-	if (shader != 0) shaderProgram = shader;
+	if (shader != 0) heightFieldProgram = shader;
 }
 
 void initGL()
@@ -225,10 +225,50 @@ void drawScene(GLuint currentShaderProgram, const mat4 &viewMatrix, const mat4 &
 	labhelper::setUniformSlow(currentShaderProgram, "normalMatrix", inverse(transpose(viewMatrix * fighterModelMatrix)));
 
 	labhelper::render(fighterModel);
-	
-	//draw the heightfield mesh
-	labhelper::setUniformSlow(currentShaderProgram, "modelViewProjectionMatrix", projectionMatrix * viewMatrix * heightFieldModelMatrix);
+}
+
+GLfloat terrain_reflectivity = 1.0f;
+GLfloat terrain_metalness = 1.0f;
+GLfloat terrain_fresnel = 1.0f;
+GLfloat terrain_shininess = 1.0f;
+GLfloat terrain_emission = 1.0f;
+GLfloat displaceNormal = 0;
+
+void drawTerrain(const mat4 &viewMatrix, const mat4 &projectionMatrix, const mat4 &lightViewMatrix, const mat4 &lightProjectionMatrix) 
+{
+	glUseProgram(heightFieldProgram);
+	//shaderProgram, viewMatrix, projMatrix, lightViewMatrix, lightProjMatrix
+	vec4 viewSpaceLightPosition = viewMatrix * vec4(lightPosition, 1.0f);
+	labhelper::setUniformSlow(heightFieldProgram, "point_light_color", point_light_color);
+	labhelper::setUniformSlow(heightFieldProgram, "point_light_intensity_multiplier", point_light_intensity_multiplier);
+	labhelper::setUniformSlow(heightFieldProgram, "viewSpaceLightPosition", vec3(viewSpaceLightPosition));
+	labhelper::setUniformSlow(heightFieldProgram, "viewSpaceLightDir", normalize(vec3(viewMatrix * vec4(-lightPosition, 0.0f))));
+	labhelper::setUniformSlow(heightFieldProgram, "spotOuterAngle", std::cos(radians(outerSpotlightAngle)));
+	labhelper::setUniformSlow(heightFieldProgram, "spotInnerAngle", std::cos(radians(innerSpotlightAngle)));
+
+	//shadowMap
+	mat4 lightMatrix = translate(mat4(1.0f), vec3(0.5f, 0.5f, 0.5f)) * scale(mat4(1.0f), vec3(0.5f, 0.5f, 0.5f)) * lightProjectionMatrix * lightViewMatrix * inverse(viewMatrix);
+	labhelper::setUniformSlow(heightFieldProgram, "lightMatrix", lightMatrix);
+
+	// Environment
+	labhelper::setUniformSlow(heightFieldProgram, "environment_multiplier", environment_multiplier);
+
+	// camera
+	labhelper::setUniformSlow(heightFieldProgram, "viewInverse", inverse(viewMatrix));
+
+	labhelper::setUniformSlow(heightFieldProgram, "modelViewProjectionMatrix", projectionMatrix * viewMatrix * heightFieldModelMatrix);
+	labhelper::setUniformSlow(heightFieldProgram, "modelViewMatrix", viewMatrix * heightFieldModelMatrix);
+	labhelper::setUniformSlow(heightFieldProgram, "normalMatrix", inverse(transpose(viewMatrix * heightFieldModelMatrix)));
+
+	labhelper::setUniformSlow(heightFieldProgram, "material_reflectivity", terrain_reflectivity);
+	labhelper::setUniformSlow(heightFieldProgram, "material_metalness", terrain_metalness);
+	labhelper::setUniformSlow(heightFieldProgram, "material_fresnel", terrain_fresnel);
+	labhelper::setUniformSlow(heightFieldProgram, "material_shininess", terrain_shininess);
+	labhelper::setUniformSlow(heightFieldProgram, "material_emission", terrain_emission);
+	labhelper::setUniformSlow(heightFieldProgram, "displaceNormal", displaceNormal);
+
 	terrain.submitTriangles();
+	glUseProgram(0);
 }
 
 void display(void)
@@ -328,11 +368,11 @@ void display(void)
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	drawBackground(viewMatrix, projMatrix);
+	drawTerrain(viewMatrix, projMatrix, lightViewMatrix, lightProjMatrix);
 	drawScene(shaderProgram, viewMatrix, projMatrix, lightViewMatrix, lightProjMatrix);
 	debugDrawLight(viewMatrix, projMatrix, vec3(lightPosition));
 
-	drawScene(heightFieldProgram, viewMatrix, projMatrix, lightViewMatrix, lightProjMatrix);
-	glUseProgram(0);
+	
 }
 
 bool handleEvents(void)
@@ -397,6 +437,17 @@ void gui()
 	// ----------------- Set variables --------------------------
 	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 	// ----------------------------------------------------------
+
+	if (ImGui::CollapsingHeader("Materials", "materials_ch", true, true))
+	{
+		ImGui::SliderFloat("Reflectivity", &terrain_reflectivity, 0.0f, 1.0f);
+		ImGui::SliderFloat("Metalness", &terrain_metalness, 0.0f, 1.0f);
+		ImGui::SliderFloat("Fresnel", &terrain_fresnel, 0.0f, 1.0f);
+		ImGui::SliderFloat("shininess", &terrain_shininess, 0.0f, 25000.0f);
+		ImGui::SliderFloat("Emission", &terrain_emission, 0.0f, 10.0f);
+		ImGui::SliderFloat("Normaldisp", &displaceNormal, 0, 100);
+	}
+
 	if (ImGui::Button("Reload Shaders"))
 	{
 		loadShaders(true);

@@ -114,7 +114,13 @@ vec3 calculateIndirectIllumination(vec3 wo, vec3 n)
 	float roughness = sqrt(sqrt(2 / (material_shininess + 2)));
 	float dNWi = dot(n,wi);
 
-	vec3 Li = environment_multiplier * textureLod(reflectionMap, lookup, roughness * 7.0).xyz;
+	float thetaWi = acos(max(-1.0f, min(1.0f, wi.y)));
+	float phiWi = atan(wi.z, wi.x);
+	if (phiWi < 0.0f) phiWi = phiWi + 2.0f * PI;
+
+	vec2 lookupWi = vec2(phiWi / (2.0 * PI), thetaWi / PI);
+
+	vec3 Li = environment_multiplier * textureLod(reflectionMap, lookupWi, roughness * 7.0).xyz;
 
 	float F = material_fresnel + (1 - material_fresnel) * pow((1 - dNWi), 5);
 

@@ -201,11 +201,11 @@ void HeightField::submitTriangles(void)
 	glDisable(GL_CULL_FACE);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, m_texid_hf);
-	glActiveTexture(GL_TEXTURE1);
+	glActiveTexture(GL_TEXTURE11);
 	glBindTexture(GL_TEXTURE_2D, m_texid_diffuse);
 	//glDrawElements(GL_TRIANGLES, m_numIndices, GL_UNSIGNED_INT, 0);
 	glDrawArrays(GL_TRIANGLES, 0, m_numIndices);
-	glEnable(GL_CULL_FACE);
+	//glEnable(GL_CULL_FACE);
 	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL); 
 	glBindVertexArray(0);
 }
